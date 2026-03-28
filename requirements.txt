@@ -1,0 +1,20 @@
+# FastAPI and Server
+fastapi
+uvicorn
+python-multipart
+aiofiles
+
+# Database
+sqlalchemy
+
+# Face Recognition
+insightface
+onnxruntime
+
+# Image Processing
+opencv-python-headless
+pillow
+
+# ML Utilities
+scikit-learn
+numpy

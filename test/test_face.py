@@ -29,10 +29,23 @@ else:
         for i, face in enumerate(faces):
             # Get the embedding (the 512-dimension vector representing the face)
             embedding = face.embedding
-            
-            # Get bounding box
+
+            # Get bounding box - InsightFace returns [x1, y1, x2, y2] (NOT x,y,width,height)
             bbox = face.bbox.astype(int)
+            x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+            width = x2 - x1
+            height = y2 - y1
+            
             print(f"Face #{i+1}:")
-            print(f"  - Location: x={bbox[0]}, y={bbox[1]}, w={bbox[2]}, h={bbox[3]}")
+            print(f"  - BBox: [x1={x1}, y1={y1}, x2={x2}, y2={y2}]")
+            print(f"  - Size: {width}x{height}")
             print(f"  - Embedding shape: {embedding.shape}")
             print(f"  - Gender: {face.gender}, Age: {face.age}")
+            
+            # Optional: Draw bbox and save test output
+            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(img, f"Face {i+1}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
+        # Save test output
+        cv2.imwrite("test_output.jpg", img)
+        print(f"\nSaved annotated image: test_output.jpg")

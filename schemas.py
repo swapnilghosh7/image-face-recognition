@@ -14,10 +14,11 @@ class PersonResponse(PersonCreate):
 # Response for Face Records
 class FaceRecordResponse(BaseModel):
     id: int
-    image_path: str
+    file_path: str  # Original image path
     person_id: Optional[int]
     person_name: Optional[str] = None
-    created_at: datetime
-    
+    face_image_url: str  # URL to cropped face image
+    created_at: Optional[datetime] = None
+
     class Config:
         from_attributes = True
