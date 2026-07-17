@@ -1,226 +1,296 @@
-# image-face-recognition
+# Universal Face Recognition & Auto-Deduplication API
 
-This project is a backend project in which we can find all the people present in the photos of a specific project.
+A high-performance FastAPI backend for scanning photo directories, automatically detecting human faces, grouping unique individuals, and extracting normalized cropped face thumbnails using InsightFace AI.
 
-## Features
+---
 
-- **Face Detection & Recognition**: Automatically detects faces in images and groups them by person
-- **Auto-Merge Duplicates**: `/scan-merge` endpoint automatically merges multiple appearances of the same person
-- **Face Cropping**: Automatically crops detected faces and saves them as `faces/{project_name}/{id}.jpg`
-- **Background Processing**: Long-running tasks run in the background to avoid timeouts
-- **Incremental Scanning**: Only processes new images (skips already processed files)
-- **Person Management**: Create, merge, delete, and assign persons to faces
+## 🌟 Key Features
 
-## Project Architecture
+- **Folder Face Scanning**: Scan any local directory (or cloud bucket placeholders) recursively for images (`.jpg`, `.jpeg`, `.png`, `.bmp`, `.webp`).
+- **Deep Learning Face Detection & Recognition**: Powered by **InsightFace** (ArcFace model with ONNX Runtime) to detect faces and extract 512-dimensional vector embeddings.
+- **Auto-Deduplication (`/scan-merge`)**: Groups duplicate appearances of the same person using Cosine Similarity matching and retains only unique face records while removing duplicates.
+- **Normalized Face Cropping**: Dynamically calculates face bounding boxes with padding, enforces a 2:3 aspect ratio, and resizes cropped face images to a standard `200x300` resolution stored under `faces/{project_name}/{id}.jpg`.
+- **Background Task Execution**: Runs long scanning and face matching processes asynchronously using FastAPI `BackgroundTasks` to prevent HTTP request timeouts.
+- **Incremental Scanning**: Hashes image files using MD5 to skip already processed files during repeated folder scans.
+- **Person & Face Management API**: Full RESTful operations to view faces, assign faces to named persons, merge separate person profiles, delete specific faces/persons, and serve cropped images directly.
+- **Admin Utilities**: Easily clear specific project data or perform full database resets.
 
-```
+---
+
+## 📂 Project Architecture
+
+```text
 image-face-recognition/
+├── main.py                    # FastAPI application entry point & route registration
+├── database.py                # SQLite database setup & SQLAlchemy session dependency
+├── models.py                  # SQLAlchemy ORM models (Project, Person, FaceRecord)
+├── schemas.py                 # Pydantic data validation schemas
+├── requirements.txt           # Python package dependencies
+├── README.md                  # Comprehensive project documentation
 │
-├── main.py                    # FastAPI app entry point (routes wiring)
-├── models.py                  # Database models (SQLAlchemy)
-├── schemas.py                 # Pydantic schemas for validation
-├── database.py                # Database connection
-├── faceMatchingHelpers.py     # (Legacy - can be removed)
-│
-├── routes/                    # API Route handlers
+├── routes/                    # Modular API Route Handlers
 │   ├── __init__.py
-│   ├── scan_routes.py         # /scan, /scan-merge endpoints
-│   ├── face_routes.py         # /faces endpoints
-│   ├── person_routes.py       # /persons endpoints
-│   ├── image_routes.py         # /images endpoints
-│   └── admin_routes.py        # /admin endpoints (reset, cleanup)
+│   ├── scan_routes.py         # /scan and /scan-merge endpoints
+│   ├── face_routes.py         # /faces listing, assignment, and deletion
+│   ├── person_routes.py       # /persons CRUD and manual merging
+│   ├── image_routes.py        # /images serving cropped face thumbnails
+│   └── admin_routes.py        # /admin reset and project cleanup
 │
-├── services/                  # Business logic
+├── services/                  # Business & AI Logic Layer
 │   ├── __init__.py
-│   └── face_service.py        # Face detection, cropping, matching, merging
+│   └── face_service.py        # InsightFace analyzer, face cropping, matching, and deduplication
 │
-├── utils/                     # Utility functions
+├── utils/                     # Utility Functions
 │   ├── __init__.py
-│   └── file_utils.py          # File hashing, listing, streaming
+│   └── file_utils.py          # File hashing (MD5), local file listing, and streaming
 │
-├── faces/                     # Auto-created (stores cropped face images)
+├── faces/                     # Auto-generated directory storing cropped face images
 │   └── {project_name}/
 │       └── {id}.jpg
 │
-├── test/
-│   ├── test_face.py           # Test script for face detection
-│   ├── test_crop.py           # Test script for face cropping
-│   └── test.jpg               # Test image
-│
-├── requirements.txt           # Python dependencies
-└── README.md                  # This file
+└── test/                      # Test scripts & sample images
+    ├── test_face.py           # Standalone script testing face detection & bounding boxes
+    ├── test_crop.py           # Standalone script testing face cropping logic
+    └── test.jpg               # Sample image for testing
 ```
 
-## Setup Instructions
+---
 
-### 1. Create a Virtual Environment:
+## 🚀 Setup & Installation
+
+### Prerequisites
+
+- **Python**: Version 3.8 or higher.
+- **C++ Build Tools**: Required by `onnxruntime` and `insightface` compilation on some systems.
+
+### 1. Create a Virtual Environment
+
 ```bash
 python -m venv venv
 ```
 
-### 2. Activate the Environment:
-**Windows (Command Prompt):**
-```bash
-venv\Scripts\activate
-```
+### 2. Activate the Virtual Environment
 
-**Windows (PowerShell):**
-```bash
-venv\Scripts\Activate.ps1
-```
+- **Windows (Command Prompt):**
+  ```cmd
+  venv\Scripts\activate
+  ```
 
-**Mac/Linux:**
-```bash
-source venv/bin/activate
-```
+- **Windows (PowerShell):**
+  ```powershell
+  venv\Scripts\Activate.ps1
+  ```
 
-### 3. Install Dependencies:
+- **macOS / Linux:**
+  ```bash
+  source venv/bin/activate
+  ```
+
+### 3. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
-Or manually:
+*Or manually install core packages:*
 ```bash
-pip install insightface onnxruntime fastapi uvicorn python-multipart pillow sqlalchemy aiofiles opencv-python-headless scikit-learn
+pip install fastapi uvicorn insightface onnxruntime opencv-python-headless pillow sqlalchemy scikit-learn numpy python-multipart aiofiles
 ```
 
-## API Endpoints
+---
 
-### Scanning Endpoints
+## 🏃 Running the Application
 
-#### `POST /scan`
-Scan a folder for faces (without auto-merging duplicates)
-```json
-{
-  "project_name": "my_project",
-  "source_path": "path/to/images",
-  "storage_type": "local"
-}
-```
-**Note:** This keeps ALL face detections. If the same person appears in 5 photos, you get 5 records.
-
-#### `POST /scan-merge` ⭐ NEW
-Scan a folder AND automatically merge duplicate faces of the same person
-```json
-{
-  "project_name": "my_project",
-  "source_path": "path/to/images",
-  "storage_type": "local"
-}
-```
-**Note:** This DELETES duplicate face records. If the same person appears in 5 photos, you get ONLY 1 record (the first one found). Cropped faces are saved to `faces/{project_name}/{id}.jpg`.
-
-### Face Endpoints
-
-#### `GET /faces?project_name=my_project`
-List all face records with cropped face images
-- Returns: `id`, `file_path`, `person_id`, `person_name`, `face_image_url`, `created_at`
-- **After /scan-merge:** Returns only unique persons (duplicates removed)
-
-#### `GET /faces` (without filter)
-List all face records across all projects
-
-#### `DELETE /faces/{face_id}` ⭐ NEW
-Delete a single face record and its cropped image from disk
-
-#### `PATCH /faces/{face_id}/assign-person`
-Manually assign a person to a face
-```json
-{ "person_id": 1 }
-```
-
-### Person Endpoints
-
-#### `GET /persons?project_name=my_project`
-List all persons with face count and representative image
-
-#### `GET /persons/{person_id}`
-Get person details with all their face images
-
-#### `POST /persons`
-Create a new person
-```json
-{ "name": "John Doe" }
-```
-
-#### `POST /persons/merge`
-Merge two persons (e.g., Unknown_1 and Unknown_2 are the same)
-```json
-{ "person_id_keep": 1, "person_id_remove": 2 }
-```
-
-#### `DELETE /persons/{person_id}`
-Delete a person and ALL their face records (including cropped images from disk)
-
-### Image Endpoints
-
-#### `GET /images/{record_id}`
-Stream the cropped face image from `faces/{project_name}/{id}.jpg`
-
-#### `GET /images/faces/{project_name}/{face_id}` ⭐ NEW
-Direct access to cropped face image
-- URL format: `/images/faces/{projectName}/{id}.jpg`
-- Example: `/images/faces/test/1.jpg`
-
-## How It Works
-
-### Option 1: Scan with Auto-Merge (Recommended)
-
-1. **Scan**: Call `/scan-merge` with a folder path
-2. **Processing**:
-   - System scans all images in the folder
-   - Detects faces using InsightFace AI
-   - Crops each face and saves to `faces/{project_name}/{id}.jpg`
-   - Groups similar faces (same person)
-   - **Deletes duplicate records** - keeps only 1 face per unique person
-3. **View Results**: Call `/faces?project_name=my_project` to get unique persons
-4. **View Person**: Call `/persons/{person_id}` to see all photos of a specific person
-
-### Option 2: Scan without Merge
-
-1. **Scan**: Call `/scan` with a folder path
-2. **Processing**:
-   - System scans all images
-   - Detects faces and crops them
-   - **Keeps ALL detections** (same person in 5 photos = 5 records)
-3. **Manual Merge**: Use `/persons/merge` endpoint to merge duplicates manually
-
-## Testing the Flow
-
-```bash
-# 1. Start server
-python main.py
-
-# 2. Scan and merge (in another terminal or via curl)
-curl -X POST "http://localhost:8000/scan-merge" \
-  -H "Content-Type: application/json" \
-  -d '{"project_name":"test","source_path":"./uploads","storage_type":"local"}'
-
-# 3. Wait for processing to complete (check console logs)
-
-# 4. Get all faces (should show only unique persons)
-curl "http://localhost:8000/faces?project_name=test"
-
-# 5. Get all persons
-curl "http://localhost:8000/persons?project_name=test"
-
-# 6. View a cropped face (both URLs work)
-curl "http://localhost:8000/images/1" > face.jpg
-curl "http://localhost:8000/images/faces/test/1.jpg" > face_direct.jpg
-
-# 7. Delete a person (removes cropped files too)
-curl -X DELETE "http://localhost:8000/persons/1"
-```
-
-## Running the Server
+Start the FastAPI dev server using Uvicorn:
 
 ```bash
 python main.py
 ```
 
-Or with uvicorn directly:
+Or run directly via Uvicorn CLI:
+
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Access API docs at: `http://localhost:8000/docs`
+Once running:
+- **API Base URL**: `http://localhost:8000`
+- **Interactive Swagger Documentation**: `http://localhost:8000/docs`
+- **ReDoc Documentation**: `http://localhost:8000/redoc`
+
+---
+
+## 📖 How It Works
+
+### Option 1: Scan & Auto-Merge Unique Faces (Recommended)
+
+1. **Trigger Scan**: Send a `POST` request to `/scan-merge` with the target folder path (`source_path`) and a `project_name`.
+2. **Background Processing**:
+   - Recursively finds all image files in the target directory.
+   - Detects face bounding boxes and extracts vector embeddings using InsightFace.
+   - Crops each detected face with 20% padding and 2:3 aspect ratio, saving it to `faces/{project_name}/{id}.jpg`.
+   - Compares face embeddings via Cosine Similarity.
+   - **Deduplication**: Automatically groups identical faces into single person profiles and deletes redundant face records and crop files.
+3. **Retrieve Unique Results**: Query `GET /faces?project_name={project_name}` or `GET /persons?project_name={project_name}`.
+
+### Option 2: Scan Without Auto-Merging
+
+1. **Trigger Scan**: Send a `POST` request to `/scan`.
+2. **Processing**: Keeps **all** face detections in the database (e.g., 5 appearances of Person A produce 5 separate face records).
+3. **Manual Merging**: Use `POST /persons/merge` to manually combine duplicate person profiles as needed.
+
+---
+
+## 🛠️ API Reference
+
+### 🔍 Scanning Endpoints
+
+#### `POST /scan`
+Initiates a background folder scan without merging duplicates.
+- **Request Body**:
+  ```json
+  {
+    "project_name": "vacation_photos",
+    "source_path": "C:/Users/User/Pictures/Vacation2024",
+    "storage_type": "local"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "status": "scanning_started",
+    "project_id": 1,
+    "message": "Scanning initiated in background. Check status later."
+  }
+  ```
+
+#### `POST /scan-merge` ⭐
+Initiates a background folder scan and automatically merges duplicate faces of the same person.
+- **Request Body**:
+  ```json
+  {
+    "project_name": "vacation_photos",
+    "source_path": "C:/Users/User/Pictures/Vacation2024",
+    "storage_type": "local"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "status": "scanning_and_merging_started",
+    "project_id": 1,
+    "message": "Scanning and auto-merging initiated in background. Check status later."
+  }
+  ```
+
+---
+
+### 👤 Face Endpoints
+
+#### `GET /faces`
+Lists face records with links to cropped face images.
+- **Query Parameters**: `project_name` (optional)
+- **Response Example**:
+  ```json
+  [
+    {
+      "id": 1,
+      "file_path": "C:/Users/User/Pictures/Vacation2024/img01.jpg",
+      "person_id": 101,
+      "person_name": "Person_1",
+      "face_image_url": "/images/faces/vacation_photos/1.jpg",
+      "created_at": "2026-07-17T09:30:00"
+    }
+  ]
+  ```
+
+#### `PATCH /faces/{face_id}/assign-person`
+Manually reassigns a face record to a specific person ID.
+- **Query Parameter**: `person_id` (integer)
+
+#### `DELETE /faces/{face_id}`
+Deletes a single face record from the database and removes its cropped image file from disk.
+
+---
+
+### 🧑 Person Endpoints
+
+#### `GET /persons`
+Lists all recognized persons along with face count and representative thumbnail URL.
+- **Query Parameters**: `project_name` (optional)
+
+#### `GET /persons/{person_id}`
+Returns details for a specific person, including a list of all associated face records.
+
+#### `POST /persons`
+Creates a new person profile.
+- **Query Parameter**: `name` (string)
+
+#### `POST /persons/merge`
+Merges two person entries into one. Moves all face records from `person_id_remove` to `person_id_keep` and deletes `person_id_remove`.
+- **Query Parameters**: `person_id_keep` (int), `person_id_remove` (int)
+
+#### `DELETE /persons/{person_id}`
+Deletes a person profile along with **all** associated face records and cropped face images.
+
+---
+
+### 🖼️ Image Endpoints
+
+#### `GET /images/faces/{project_name}/{face_id}`
+Directly serves the cropped JPEG thumbnail for a given face ID.
+
+#### `GET /images/{record_id}`
+Legacy endpoint to stream a face crop image by record ID.
+
+---
+
+### ⚙️ Admin Endpoints
+
+#### `POST /admin/reset`
+⚠️ **Danger Zone**: Wipes all database records (Projects, Persons, FaceRecords) and deletes the entire `faces/` directory.
+
+#### `DELETE /admin/clear-project/{project_name}`
+Deletes all records and face thumbnails associated with a specific project name.
+
+---
+
+## 🧪 Testing & Verification
+
+You can test the API flow using `curl` or tools like Postman:
+
+```bash
+# 1. Start the backend server
+python main.py
+
+# 2. Trigger folder scan with auto-deduplication
+curl -X POST "http://localhost:8000/scan-merge" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_name": "sample_folder",
+    "source_path": "./test",
+    "storage_type": "local"
+  }'
+
+# 3. Retrieve extracted unique faces
+curl "http://localhost:8000/faces?project_name=sample_folder"
+
+# 4. View representative persons
+curl "http://localhost:8000/persons?project_name=sample_folder"
+
+# 5. Fetch a cropped face image
+curl "http://localhost:8000/images/faces/sample_folder/1.jpg" --output face_1.jpg
+```
+
+You can also test standalone face detection and cropping directly using the scripts in `test/`:
+
+```bash
+python test/test_face.py
+python test_crop.py
+```
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
